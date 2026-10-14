@@ -9,6 +9,7 @@
 
 import { onMounted, onUnmounted } from 'vue'
 import { Howl, Howler } from 'howler'
+import { config, applyConfig, isConfigReady, nuiUrl, type NuiConfig } from './config'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,36 +40,32 @@ interface ListenerMsg {
   rx: number; ry: number; rz: number
 }
 
-type Msg = PlayMsg | StopMsg | UpdatePosMsg | ListenerMsg
+interface ConfigMsg {
+  type: '3d-audio:config'
+  config: NuiConfig
+}
+
+type Msg = PlayMsg | StopMsg | UpdatePosMsg | ListenerMsg | ConfigMsg
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
 const sounds = new Map<number, Howl>()
 
 /**
- * The resource name as seen by the NUI. GetParentResourceName() is a global
- * injected into every FiveM NUI frame; the literal fallback keeps `vite dev`
- * from throwing.
- *
- * Resolved at runtime rather than hardcoded so that renaming the resource
- * folder does not silently break the NUI callbacks.
+ * Messages that arrive between mount and the config handshake completing.
+ * Flushed in arrival order once the client has answered.
  */
-function resourceName(): string {
-  const g = globalThis as unknown as { GetParentResourceName?: () => string }
-  try {
-    return typeof g.GetParentResourceName === 'function' ? g.GetParentResourceName() : '3d-audio'
-  } catch {
-    return '3d-audio'
-  }
-}
+const pending: Msg[] = []
 
-const log = (...args: unknown[]) => console.log('[3d-audio]', ...args)
+const log = (...args: unknown[]) => { if (config.debug) console.log('[3d-audio]', ...args) }
 const warn = (...args: unknown[]) => console.warn('[3d-audio]', ...args)
+
+const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max)
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 function onPlay(msg: PlayMsg): void {
-  const src = `/assets/sounds/${msg.soundFile}`
+  const src = `/${config.soundPath}/${msg.soundFile}`
 
   // Stop any existing Howl for this ID (can happen when server re-sends a
   // dimension-specific sound after a bucket change)
@@ -76,11 +73,17 @@ function onPlay(msg: PlayMsg): void {
   if (existing) {
     existing.stop()
     existing.unload()
+  } else if (sounds.size >= config.maxConcurrentSounds) {
+    warn(`refusing sound #${msg.soundId}: maxConcurrentSounds (${config.maxConcurrentSounds}) reached`)
+    return
   }
+
+  const volume = clamp(msg.volume, 0, config.maxVolume)
+  const range = clamp(msg.range, 0.1, config.maxRange)
 
   const howl = new Howl({
     src: [src],
-    volume: msg.volume,
+    volume,
     loop: msg.loop,
     onload() {
       // Guard: if this Howl was replaced (e.g. entity left and re-entered streaming
@@ -91,11 +94,17 @@ function onPlay(msg: PlayMsg): void {
       }
       howl.pos(msg.x, msg.y, msg.z)
       howl.pannerAttr({
-        panningModel: 'HRTF',
-        distanceModel: 'linear',  // hard cutoff at maxDistance (inverse ignores maxDistance)
-        refDistance: 1,           // full volume up to 1 m, then linear rolloff begins
-        rolloffFactor: 1,         // reaches 0 exactly at maxDistance
-        maxDistance: msg.range,
+        panningModel: config.panner.panningModel,
+        // 'linear' gives a hard cutoff at maxDistance; 'inverse' and 'exponential'
+        // ignore maxDistance entirely and stay faintly audible past `range`.
+        //
+        // The cast is needed because @types/howler narrows distanceModel to
+        // 'linear' | 'inverse', while Howler and the Web Audio PannerNode both
+        // accept 'exponential' at runtime.
+        distanceModel: config.panner.distanceModel as 'linear' | 'inverse',
+        refDistance: config.panner.refDistance,
+        rolloffFactor: config.panner.rolloffFactor,
+        maxDistance: range,
       })
       howl.play()
     },
@@ -104,7 +113,7 @@ function onPlay(msg: PlayMsg): void {
       // is still active. Only clean up on end for non-looping sounds.
       if (msg.loop) return
       sounds.delete(msg.soundId)
-      fetch(`https://${resourceName()}/3d-audio:ended`, {
+      fetch(nuiUrl('3d-audio:ended'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ soundId: msg.soundId }),
@@ -148,37 +157,69 @@ function onListener(msg: ListenerMsg): void {
   //
   // Up vector stays (0, 0, 1) — GTA's Z-axis is vertical.
   const toRad = (d: number) => d * Math.PI / 180
-  const yaw   = toRad(msg.rz)   // heading  (0 = North)
+  const yaw = toRad(msg.rz)   // heading  (0 = North)
   const pitch = toRad(msg.rx)   // pitch    (positive = nose up)
   const fx = -Math.sin(yaw) * Math.cos(pitch)
-  const fy =  Math.cos(yaw) * Math.cos(pitch)
-  const fz =  Math.sin(pitch)
+  const fy = Math.cos(yaw) * Math.cos(pitch)
+  const fz = Math.sin(pitch)
   Howler.orientation(fx, fy, fz, 0, 0, 1)
 }
 
 // ─── Message dispatch ─────────────────────────────────────────────────────────
 
+function dispatch(data: Msg): void {
+  if (data.type === '3d-audio:play') onPlay(data)
+  else if (data.type === '3d-audio:stop') onStop(data)
+  else if (data.type === '3d-audio:update-pos') onUpdatePos(data)
+  else if (data.type === '3d-audio:listener') onListener(data)
+}
+
 function onMessage(event: MessageEvent): void {
   const data = event.data as Msg
   if (!data?.type) return
 
-  if      (data.type === '3d-audio:play'       ) onPlay(data)
-  else if (data.type === '3d-audio:stop'       ) onStop(data)
-  else if (data.type === '3d-audio:update-pos' ) onUpdatePos(data)
-  else if (data.type === '3d-audio:listener'   ) onListener(data)
+  if (data.type === '3d-audio:config') {
+    applyConfig(data.config)
+    log('config applied', config)
+    while (pending.length > 0) dispatch(pending.shift()!)
+    return
+  }
+
+  // Queue anything that arrives before the handshake completes, so no sound is
+  // played with fallback panner settings that may differ from config.json.
+  if (!isConfigReady()) {
+    pending.push(data)
+    return
+  }
+
+  dispatch(data)
 }
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 onMounted(() => {
-  log('NUI ready, Howler context:', Howler.ctx?.state ?? 'no AudioContext')
+  // Listener first, so nothing is missed while the handshake is in flight.
   window.addEventListener('message', onMessage)
+
+  fetch(nuiUrl('3d-audio:nui-ready'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  }).catch(() => {
+    // Not running inside FiveM (vite dev), or the client script is not up yet.
+    // Fall back to the built-in defaults so the NUI still works.
+    applyConfig(null)
+    while (pending.length > 0) dispatch(pending.shift()!)
+  })
+
+  console.log('[3d-audio] NUI ready, Howler context:', Howler.ctx?.state ?? 'no AudioContext')
 })
 
 onUnmounted(() => {
   window.removeEventListener('message', onMessage)
   sounds.forEach(h => { h.stop(); h.unload() })
   sounds.clear()
+  pending.length = 0
 })
 </script>
 

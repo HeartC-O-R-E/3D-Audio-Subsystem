@@ -1,0 +1,25 @@
+{
+  "debug": false,
+  "tickIntervalMs": 50,
+  "soundPath": "assets/sounds",
+  "defaults": {
+    "range": 50,
+    "volume": 1.0,
+    "loop": false,
+    "dimension": -1
+  },
+  "limits": {
+    "maxVolume": 1.0,
+    "maxRange": 1000,
+    "maxConcurrentSounds": 64
+  },
+  "panner": {
+    "panningModel": "HRTF",
+    "distanceModel": "linear",
+    "refDistance": 1,
+    "rolloffFactor": 1
+  },
+  "security": {
+    "verifyRoutingBucket": false
+  }
+}

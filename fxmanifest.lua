@@ -14,4 +14,7 @@ ui_page 'dist/web/index.html'
 files {
     'dist/web/**/*',
     'assets/sounds/**/*',
+    -- Required: LoadResourceFile can only read manifest-declared files on the
+    -- client, and the NUI resolves sound paths relative to the resource root.
+    'config.json',
 }

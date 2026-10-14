@@ -8,7 +8,7 @@
  *   FiveM exposes no client-side native to read the player's routing bucket.
  *   Your framework must call exports['3d-audio']['setDimension'](dim) whenever
  *   the local player's routing bucket changes — this is the only thing 3d-audio
- *   needs from the surrounding gamemode.  On dimension change:
+ *   needs from the surrounding gamemode. On dimension change:
  *     1. Stops all sounds bound to the old bucket.
  *     2. Notifies the server so it can re-send sounds for the new bucket.
  *   Sounds with dimension = -1 are never stopped by dimension changes.
@@ -24,12 +24,20 @@
  *
  * ENTITY TRACKING
  *   When entityNetId > 0 the sound pauses when the entity leaves streaming
- *   range and resumes when it re-enters.  The tracking tick runs at 20 Hz.
+ *   range and resumes when it re-enters. The tracking tick runs at
+ *   config.tickIntervalMs (default 50 ms = 20 Hz).
  */
+
+import { loadAudioConfig, makeLogger, toNuiConfig } from '../shared/config';
+import { NET_PLAY, NET_STOP, NET_BUCKET_CHANGED, NET_CLIENT_ENDED, LOCAL_ENDED, NUI_ENDED, NUI_READY, NUI_MSG } from '../shared/events';
 
 // Use globalThis to prevent esbuild from shadowing FiveM's exports() with CommonJS exports
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const exp = (globalThis as any).exports as (name: string, fn: (...args: any[]) => any) => void;
+
+const cfg = loadAudioConfig();
+const { log, warn } = makeLogger(cfg);
+const TICK_MS = cfg.tickIntervalMs;
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -37,11 +45,49 @@ let listenerTick: ReturnType<typeof setTick> | null = null;
 let currentDimension = 0;    // updated by setDimension(); default = main world
 
 /** Sound IDs currently playing in the NUI */
-const activeSounds    = new Set<number>();
+const activeSounds = new Set<number>();
 /** soundId → routing bucket (-1 = all) */
 const soundDimensions = new Map<number, number>();
 /** soundId → entity-tracking tick */
-const entityTracks    = new Map<number, ReturnType<typeof setTick>>();
+const entityTracks = new Map<number, ReturnType<typeof setTick>>();
+
+// ─── Argument normalisation ───────────────────────────────────────────────────
+// Config supplies defaults only where a caller passed nothing usable, and limits
+// that can only ever make a sound quieter or shorter-ranged.
+
+function clamp(v: number, min: number, max: number): number {
+    return Math.min(Math.max(v, min), max);
+}
+
+function normRange(range: number): number {
+    const v = (typeof range === 'number' && Number.isFinite(range) && range > 0)
+        ? range : cfg.defaults.range;
+    return clamp(v, 0.1, cfg.limits.maxRange);
+}
+
+function normVolume(volume: number): number {
+    const v = (typeof volume === 'number' && Number.isFinite(volume))
+        ? volume : cfg.defaults.volume;
+    return clamp(v, 0, cfg.limits.maxVolume);
+}
+
+function normLoop(loop: boolean): boolean {
+    return typeof loop === 'boolean' ? loop : cfg.defaults.loop;
+}
+
+function normDimension(dimension: number): number {
+    return (typeof dimension === 'number' && Number.isFinite(dimension))
+        ? dimension : cfg.defaults.dimension;
+}
+
+/** Soft concurrency cap — refuses new sounds rather than evicting existing ones. */
+function atCapacity(soundId: number): boolean {
+    if (activeSounds.has(soundId) || entityTracks.has(soundId)) return false;
+    const inFlight = activeSounds.size + entityTracks.size;
+    if (inFlight < cfg.limits.maxConcurrentSounds) return false;
+    warn(`refusing sound #${soundId}: limits.maxConcurrentSounds (${cfg.limits.maxConcurrentSounds}) reached`);
+    return true;
+}
 
 // ─── Active-sound helpers ─────────────────────────────────────────────────────
 
@@ -60,13 +106,13 @@ function deactivateSound(soundId: number): void {
 function onDimensionChange(newDim: number): void {
     if (newDim === currentDimension) return;
 
-    console.log(`[3d-audio] dimension ${currentDimension} → ${newDim}, stopping ${soundDimensions.size} tracked sound(s)`);
+    log(`dimension ${currentDimension} → ${newDim}, stopping ${soundDimensions.size} tracked sound(s)`);
 
     soundDimensions.forEach((soundDim, soundId) => {
         if (soundDim !== -1) {
             if (activeSounds.has(soundId)) {
                 deactivateSound(soundId);
-                SendNuiMessage(JSON.stringify({ type: '3d-audio:stop', soundId }));
+                SendNuiMessage(JSON.stringify({ type: NUI_MSG.stop, soundId }));
             }
             stopEntityTracking(soundId);
             soundDimensions.delete(soundId);
@@ -74,10 +120,10 @@ function onDimensionChange(newDim: number): void {
     });
 
     currentDimension = newDim;
-    emitNet('3d-audio:bucket-changed', newDim);
+    emitNet(NET_BUCKET_CHANGED, newDim);
 }
 
-// ─── Listener tick (20 Hz) ────────────────────────────────────────────────────
+// ─── Listener tick ────────────────────────────────────────────────────────────
 
 function ensureListenerTick(): void {
     if (listenerTick !== null) return;
@@ -94,11 +140,11 @@ function ensureListenerTick(): void {
         const [rx, ry, rz] = GetEntityRotation(ped, 2);
 
         SendNuiMessage(JSON.stringify({
-            type: '3d-audio:listener',
+            type: NUI_MSG.listener,
             px, py, pz, rx, ry, rz,
         }));
 
-        await new Promise<void>(resolve => setTimeout(resolve, 50)); // 20 Hz
+        await new Promise<void>(resolve => setTimeout(resolve, TICK_MS));
     });
 }
 
@@ -114,7 +160,7 @@ function startEntityTracking(
 ): void {
     if (entityTracks.has(soundId)) return;
 
-    console.log(`[3d-audio] entity-track start #${soundId} entity=${entityNetId} file="${soundFile}"`);
+    log(`entity-track start #${soundId} entity=${entityNetId} file="${soundFile}"`);
 
     let soundActive = false;
 
@@ -125,10 +171,10 @@ function startEntityTracking(
             if (soundActive) {
                 soundActive = false;
                 deactivateSound(soundId);
-                SendNuiMessage(JSON.stringify({ type: '3d-audio:stop', soundId }));
-                console.log(`[3d-audio] entity-track #${soundId}: entity left streaming range → paused`);
+                SendNuiMessage(JSON.stringify({ type: NUI_MSG.stop, soundId }));
+                log(`entity-track #${soundId}: entity left streaming range → paused`);
             }
-            await new Promise<void>(resolve => setTimeout(resolve, 50)); // 20 Hz — no need to hammer at 60 FPS while entity is gone
+            await new Promise<void>(resolve => setTimeout(resolve, TICK_MS)); // no need to hammer while entity is gone
             return;
         }
 
@@ -138,15 +184,15 @@ function startEntityTracking(
             soundActive = true;
             activateSound(soundId);
             SendNuiMessage(JSON.stringify({
-                type: '3d-audio:play',
+                type: NUI_MSG.play,
                 soundId, soundFile, x, y, z, range, volume, loop,
             }));
-            console.log(`[3d-audio] entity-track #${soundId}: entity in range → playing @ (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})`);
+            log(`entity-track #${soundId}: entity in range → playing @ (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})`);
         } else {
-            SendNuiMessage(JSON.stringify({ type: '3d-audio:update-pos', soundId, x, y, z }));
+            SendNuiMessage(JSON.stringify({ type: NUI_MSG.updatePos, soundId, x, y, z }));
         }
 
-        await new Promise<void>(resolve => setTimeout(resolve, 50)); // 20 Hz — 60 FPS is excessive for position updates
+        await new Promise<void>(resolve => setTimeout(resolve, TICK_MS));
     });
 
     entityTracks.set(soundId, tick);
@@ -158,7 +204,7 @@ function stopEntityTracking(soundId: number): void {
     if (tick !== undefined) {
         clearTick(tick);
         entityTracks.delete(soundId);
-        console.log(`[3d-audio] entity-track stopped #${soundId}`);
+        log(`entity-track stopped #${soundId}`);
     }
 }
 
@@ -172,7 +218,7 @@ function playSound(
 ): void {
     activateSound(soundId);
     SendNuiMessage(JSON.stringify({
-        type: '3d-audio:play',
+        type: NUI_MSG.play,
         soundId, soundFile, x, y, z, range, volume, loop,
     }));
 }
@@ -181,12 +227,43 @@ function stopSound(soundId: number): void {
     deactivateSound(soundId);
     stopEntityTracking(soundId);
     soundDimensions.delete(soundId);
-    SendNuiMessage(JSON.stringify({ type: '3d-audio:stop', soundId }));
+    SendNuiMessage(JSON.stringify({ type: NUI_MSG.stop, soundId }));
+}
+
+/** Shared by the server-pushed and client-local play paths. */
+function dispatchPlay(
+    soundId: number,
+    soundFile: string,
+    x: number, y: number, z: number,
+    range: number, volume: number, loop: boolean,
+    dimension: number,
+    entityNetId: number,
+): void {
+    const dim = normDimension(dimension);
+
+    if (dim !== -1 && currentDimension !== dim) {
+        log(`play #${soundId} "${soundFile}" → skipped (dim mismatch: current=${currentDimension}, sound=${dim})`);
+        return;
+    }
+    if (atCapacity(soundId)) return;
+
+    const r = normRange(range);
+    const v = normVolume(volume);
+    const l = normLoop(loop);
+
+    soundDimensions.set(soundId, dim);
+    log(`play #${soundId} "${soundFile}" dim=${dim} entity=${entityNetId} range=${r} vol=${v} loop=${l}`);
+
+    if (entityNetId > 0) {
+        startEntityTracking(soundId, entityNetId, soundFile, r, v, l);
+    } else {
+        playSound(soundId, soundFile, x, y, z, r, v, l);
+    }
 }
 
 // ─── Server-initiated sounds ──────────────────────────────────────────────────
 
-onNet('3d-audio:play', (
+onNet(NET_PLAY, (
     soundId: number,
     soundFile: string,
     x: number, y: number, z: number,
@@ -194,44 +271,46 @@ onNet('3d-audio:play', (
     dimension: number,
     entityNetId: number,
 ) => {
-    if (dimension !== -1 && currentDimension !== dimension) {
-        console.log(`[3d-audio] server play #${soundId} "${soundFile}" → skipped (dim mismatch: current=${currentDimension}, sound=${dimension})`);
-        return;
-    }
-    soundDimensions.set(soundId, dimension);
-    console.log(`[3d-audio] server play #${soundId} "${soundFile}" dim=${dimension} entity=${entityNetId}`);
-
-    if (entityNetId > 0) {
-        startEntityTracking(soundId, entityNetId, soundFile, range, volume, loop);
-    } else {
-        playSound(soundId, soundFile, x, y, z, range, volume, loop);
-    }
+    dispatchPlay(soundId, soundFile, x, y, z, range, volume, loop, dimension, entityNetId);
 });
 
-onNet('3d-audio:stop', (soundId: number) => {
-    console.log(`[3d-audio] server stop #${soundId}`);
+onNet(NET_STOP, (soundId: number) => {
+    log(`server stop #${soundId}`);
     stopSound(soundId);
+});
+
+// ─── NUI handshake ────────────────────────────────────────────────────────────
+// The NUI frame mounts after this script runs, so the config cannot be
+// fire-and-forget: SendNuiMessage before the frame exists is silently dropped.
+// The NUI asks for its config on mount instead, and we answer here. This also
+// makes a resource restart safe.
+
+RegisterNuiCallbackType(NUI_READY);
+on(`__cfx_nui:${NUI_READY}`, (_data: unknown, cb: (payload: unknown) => void) => {
+    cb({});
+    SendNuiMessage(JSON.stringify({ type: NUI_MSG.config, config: toNuiConfig(cfg) }));
+    log('NUI ready — config sent');
 });
 
 // ─── NUI ended callback ───────────────────────────────────────────────────────
 
-RegisterNuiCallbackType('3d-audio:ended');
-on('__cfx_nui:3d-audio:ended', (data: { soundId?: number } | null, cb: () => void) => {
+RegisterNuiCallbackType(NUI_ENDED);
+on(`__cfx_nui:${NUI_ENDED}`, (data: { soundId?: number } | null, cb: () => void) => {
     cb();
     if (!data || data.soundId === undefined) return;
-    console.log(`[3d-audio] NUI ended #${data.soundId}`);
+    log(`NUI ended #${data.soundId}`);
     deactivateSound(data.soundId);
     stopEntityTracking(data.soundId);
     soundDimensions.delete(data.soundId);
 
     if (data.soundId < 0) {
         // Client-local sound ended — notify local event consumers
-        emit('3d-audio:ended', data.soundId);
+        emit(LOCAL_ENDED, data.soundId);
     } else {
         // Server-initiated sound ended — notify server to remove from soundRegistry.
         // Without this the server leaks one-shot sound entries and may try to
         // re-send completed sounds to players who change routing buckets.
-        emitNet('3d-audio:client-ended', data.soundId);
+        emitNet(NET_CLIENT_ENDED, data.soundId);
     }
 });
 
@@ -255,27 +334,16 @@ exp('play3d', (
     soundFile: string,
     x: number, y: number, z: number,
     range: number, volume: number, loop: boolean,
-    dimension: number = -1,
+    dimension: number = cfg.defaults.dimension,
     entityNetId: number = 0,
 ): void => {
-    if (dimension !== -1 && currentDimension !== dimension) {
-        console.log(`[3d-audio] play3d #${soundId} "${soundFile}" → skipped (dim mismatch: current=${currentDimension}, sound=${dimension})`);
-        return;
-    }
-    soundDimensions.set(soundId, dimension);
-    console.log(`[3d-audio] play3d #${soundId} "${soundFile}" dim=${dimension} entity=${entityNetId}`);
-
-    if (entityNetId > 0) {
-        startEntityTracking(soundId, entityNetId, soundFile, range, volume, loop);
-    } else {
-        playSound(soundId, soundFile, x, y, z, range, volume, loop);
-    }
+    dispatchPlay(soundId, soundFile, x, y, z, range, volume, loop, dimension, entityNetId);
 });
 
 /** Stop a client-local sound. */
 exp('stop', (soundId: number): void => {
-    console.log(`[3d-audio] stop #${soundId}`);
+    log(`stop #${soundId}`);
     stopSound(soundId);
 });
 
-console.log('[3d-audio] Client loaded');
+console.log(`[3d-audio] Client loaded (debug=${cfg.debug}, tick=${TICK_MS}ms)`);
