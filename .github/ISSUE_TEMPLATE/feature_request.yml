@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest a capability or improvement
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Note that export signatures are intentionally frozen for backward
+        compatibility — a nicer API would be added as a *new* export rather than
+        by changing an existing one. See
+        [Known Limitations](https://heartc-o-r-e.github.io/3D-Audio-Subsystem/limitations/#6-asymmetric-export-signatures).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: >-
+        Describe the goal, not just the proposed solution — there may already be
+        a way to do it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: If you have a concrete API or config shape in mind, sketch it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Current workaround
+      description: How you are handling it today, if at all.

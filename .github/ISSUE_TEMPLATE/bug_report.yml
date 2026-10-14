@@ -1,0 +1,93 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, please check
+        [Known Limitations](https://heartc-o-r-e.github.io/3D-Audio-Subsystem/limitations/) —
+        several surprising behaviours are already documented there with mitigations.
+
+        The two most common causes of "no sound at all" are a resource folder not
+        named `3d-audio`, and an unbuilt `git clone`. See
+        [Troubleshooting](https://heartc-o-r-e.github.io/3D-Audio-Subsystem/troubleshooting/).
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: My resource folder is named exactly `3d-audio`
+          required: true
+        - label: I installed a release archive, or built from source with `npm run build`
+          required: true
+        - label: I set `"debug": true` in `config.json` and restarted the resource
+          required: true
+        - label: I checked Known Limitations and this is not one of them
+          required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: call
+    attributes:
+      label: The call you made
+      description: The exact `play3d`/`stop`/`setDimension` line, verbatim.
+      render: lua
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Your config.json
+      render: json
+    validations:
+      required: true
+
+  - type: textarea
+    id: server_log
+    attributes:
+      label: Server console output
+      description: With `"debug": true`.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: client_log
+    attributes:
+      label: Client console output (F8)
+      render: text
+
+  - type: textarea
+    id: nui_log
+    attributes:
+      label: NUI console output
+      description: >-
+        Optional but very helpful for silent sounds — this is where file load
+        errors appear. See the Troubleshooting page for how to open it.
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: 3d-audio version
+      placeholder: v1.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: artifact
+    attributes:
+      label: FiveM server artifact version
+      placeholder: "12345"
+    validations:
+      required: true
