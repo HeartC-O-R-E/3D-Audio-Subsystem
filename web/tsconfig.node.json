@@ -1,6 +1,11 @@
 {
   "compilerOptions": {
     "composite": true,
+    // Redirect the emit: with `composite` and no outDir, `vue-tsc -b` writes
+    // vite.config.js and vite.config.d.ts next to the source. (`noEmit` is not
+    // allowed alongside `composite`.)
+    "outDir": "./node_modules/.tmp/tsconfig.node",
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node/tsconfig.node.tsbuildinfo",
     "skipLibCheck": true,
     "module": "ESNext",
     "moduleResolution": "bundler",

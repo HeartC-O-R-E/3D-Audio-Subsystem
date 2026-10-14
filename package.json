@@ -13,13 +13,18 @@
     "url": "https://github.com/HeartC-O-R-E/3D-Audio-Subsystem/issues"
   },
   "scripts": {
-    "build": "npm run clearbuild && npm run typecheck && node build/build-bundle.js && npm run build:web && npm run deploy",
-    "build:scripts": "npm run clearbuild && npm run typecheck && node build/build-bundle.js",
-    "build:web": "cd web && npm run build",
-    "clearbuild": "rimraf ./dist",
+    "clean": "rimraf ./dist ./package",
     "typecheck": "tsc --noEmit -p ./tsconfig.json",
-    "deploy": "node build/deploy.js",
-    "watch": "npm run clearbuild && cross-env IS_WATCH_MODE=1 node build/build-bundle.js"
+    "check:config": "node build/check-config-sync.js",
+    "build:scripts": "node build/build-bundle.js",
+    "build:web": "npm --prefix web run build",
+    "build": "npm run clean && npm run typecheck && npm run check:config && npm run build:scripts && npm run build:web",
+    "watch": "npm run clean && cross-env IS_WATCH_MODE=1 node build/build-bundle.js",
+    "package": "node build/package.js",
+    "dev:deploy": "node build/dev-deploy.js",
+    "install:all": "npm ci && npm ci --prefix web",
+    "docs:serve": "mkdocs serve",
+    "docs:build": "mkdocs build --strict"
   },
   "devDependencies": {
     "@citizenfx/client": "^2.0.6063-1",
