@@ -1,0 +1,146 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # In FiveM the resource name is the FOLDER name, and exports are keyed on it.
+  # The release archive must therefore carry this folder at its root.
+  RESOURCE_NAME: 3d-audio
+
+jobs:
+  build:
+    name: Typecheck, bundle and package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          # Two separate npm projects; both lockfiles must key the cache or a
+          # change in one silently reuses a stale cache for the other.
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix web
+
+      - name: Check fxmanifest ships config.json
+        # Without this, LoadResourceFile returns nil on the client and the whole
+        # config silently falls back to defaults.
+        run: grep -q "'config.json'" fxmanifest.lua
+
+      - name: Check config defaults are in sync
+        run: npm run check:config
+
+      - name: Typecheck server + client
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify build output
+        run: |
+          set -e
+          for f in dist/server/index.js dist/client/index.js dist/web/index.html; do
+            test -f "$f" || { echo "missing $f"; exit 1; }
+          done
+          echo '--- dist ---'
+          find dist -type f | sort
+
+      - name: Assert the build left no stray tracked files
+        run: |
+          if git ls-files --error-unmatch web/vite.config.js web/vite.config.d.ts >/dev/null 2>&1; then
+            echo 'web/vite.config.js(.d.ts) must never be committed'; exit 1
+          fi
+          git status --porcelain --untracked-files=no > /tmp/dirty
+          if [ -s /tmp/dirty ]; then
+            echo 'the build modified tracked files:'; cat /tmp/dirty; exit 1
+          fi
+
+      - name: Stage runnable resource
+        run: npm run package
+
+      - name: Upload resource artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.RESOURCE_NAME }}-${{ github.sha }}
+          path: package/
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix web
+
+      - name: Build and stage
+        run: |
+          npm run build
+          npm run package
+
+      - name: Create release archive
+        run: |
+          cd package
+          zip -r -9 "../${RESOURCE_NAME}-${GITHUB_REF_NAME}.zip" "${RESOURCE_NAME}"
+          cd ..
+          unzip -l "${RESOURCE_NAME}-${GITHUB_REF_NAME}.zip"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ env.RESOURCE_NAME }}-${{ github.ref_name }}.zip
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
+          body: |
+            ### Install
+
+            1. Download `${{ env.RESOURCE_NAME }}-${{ github.ref_name }}.zip` below.
+            2. Extract it into your server's `resources/` directory. The archive
+               already contains a top-level `${{ env.RESOURCE_NAME }}/` folder, so the
+               resource name is correct — do not rename it, exports are keyed on it.
+            3. Add `ensure ${{ env.RESOURCE_NAME }}` to your `server.cfg`.
+            4. Optionally edit `${{ env.RESOURCE_NAME }}/config.json`.
+
+            Full documentation: https://heartc-o-r-e.github.io/3D-Audio-Subsystem/
