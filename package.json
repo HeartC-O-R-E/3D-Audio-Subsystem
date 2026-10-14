@@ -1,0 +1,23 @@
+{
+  "name": "hcrp-audio",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "npm run clearbuild && npm run typecheck && node build/build-bundle.js && npm run build:web && npm run deploy",
+    "build:scripts": "npm run clearbuild && npm run typecheck && node build/build-bundle.js",
+    "build:web": "cd web && npm run build",
+    "clearbuild": "rimraf ./dist",
+    "typecheck": "tsc --noEmit -p ./tsconfig.json",
+    "deploy": "node build/deploy.js",
+    "watch": "npm run clearbuild && cross-env IS_WATCH_MODE=1 node build/build-bundle.js"
+  },
+  "devDependencies": {
+    "@citizenfx/client": "^2.0.6063-1",
+    "@citizenfx/server": "^2.0.6063-1",
+    "@types/node": "^20.10.5",
+    "cross-env": "^7.0.3",
+    "esbuild": "^0.25.1",
+    "rimraf": "^5.0.1",
+    "typescript": "^5.3.3"
+  }
+}

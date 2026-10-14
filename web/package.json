@@ -1,0 +1,21 @@
+{
+  "name": "hcrp-audio-web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "howler": "^2.2.4",
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/howler": "^2.2.11",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "typescript": "^5.3.3",
+    "vite": "^6.0.0",
+    "vue-tsc": "^2.0.0"
+  }
+}
