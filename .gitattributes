@@ -1,0 +1,16 @@
+# Normalise line endings. Development happens on Windows, CI builds on Linux,
+# and the build workflow asserts that building modifies no tracked file — which
+# only holds if line endings are stored consistently.
+* text=auto eol=lf
+
+# Binary assets must never be touched.
+*.mp3 binary
+*.wav binary
+*.ogg binary
+*.png binary
+*.jpg binary
+*.ico binary
+
+# Generated; keep diffs collapsed in review.
+package-lock.json -diff linguist-generated
+web/package-lock.json -diff linguist-generated
