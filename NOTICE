@@ -1,0 +1,32 @@
+3D Audio Subsystem
+Copyright 2026 Northdegree, Julscha
+
+This product includes software developed as part of the 3D Audio Subsystem
+project, licensed under the Apache License, Version 2.0.
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+The NUI build output (dist/web) bundles the following third-party software:
+
+  Howler.js
+  https://github.com/goldfire/howler.js
+  Copyright (c) 2013-present James Simpson and GoldFire Studios, Inc.
+  Licensed under the MIT License.
+
+  Vue.js
+  https://github.com/vuejs/core
+  Copyright (c) 2018-present Yuxi (Evan) You and Vue contributors
+  Licensed under the MIT License.
+
+--------------------------------------------------------------------------------
+Audio assets
+--------------------------------------------------------------------------------
+
+The audio files under assets/sounds/ are NOT licensed under the Apache License,
+Version 2.0, and are not covered by this NOTICE. Their provenance has not been
+verified. They are included as local test fixtures only and should not be
+redistributed or used on a public server.
+
+Replace them with audio you own or that carries a license permitting your use.
