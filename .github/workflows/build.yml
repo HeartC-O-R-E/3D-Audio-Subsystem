@@ -50,11 +50,13 @@ jobs:
         # config silently falls back to defaults.
         run: grep -q "'config.json'" fxmanifest.lua
 
+      - name: Typecheck server + client
+        # Before check:config, which bundles the same modules — a type error
+        # surfaces as a clean tsc message rather than an esbuild failure.
+        run: npm run typecheck
+
       - name: Check config defaults are in sync
         run: npm run check:config
-
-      - name: Typecheck server + client
-        run: npm run typecheck
 
       - name: Build
         run: npm run build

@@ -15,23 +15,28 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const esbuild = require('esbuild');
 
 const ROOT = path.resolve(__dirname, '..');
 
-/** Bundle a TS module to CJS with esbuild and require it, so we compare real values. */
+/**
+ * Bundle a TS module to CJS and require it, so we compare the real values rather
+ * than parsing source.
+ *
+ * Uses esbuild's Node API, not its CLI. node_modules/esbuild/bin/esbuild is a JS
+ * shim on Windows but the native binary itself on Linux and macOS, so spawning
+ * it with `node` works on Windows and fails everywhere else.
+ */
 function loadTsModule(relPath) {
-    const esbuild = path.join(ROOT, 'node_modules', 'esbuild', 'bin', 'esbuild');
-    const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), '3d-audio-sync-')), 'mod.js');
-    execFileSync(process.execPath, [
-        esbuild,
-        path.join(ROOT, relPath),
-        '--bundle',
-        '--platform=node',
-        '--format=cjs',
-        `--outfile=${out}`,
-        '--log-level=error',
-    ], { stdio: 'inherit' });
+    const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), '3d-audio-sync-')), 'mod.cjs');
+    esbuild.buildSync({
+        entryPoints: [path.join(ROOT, relPath)],
+        bundle: true,
+        platform: 'node',
+        format: 'cjs',
+        outfile: out,
+        logLevel: 'error',
+    });
     return require(out);
 }
 
