@@ -1,7 +1,17 @@
 {
-  "name": "hcrp-audio",
+  "name": "3d-audio",
   "version": "1.0.0",
+  "description": "3D positional audio for FiveM — arbitrary audio files spatialized through Web Audio / Howler.js",
+  "license": "Apache-2.0",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HeartC-O-R-E/3D-Audio-Subsystem.git"
+  },
+  "homepage": "https://heartc-o-r-e.github.io/3D-Audio-Subsystem/",
+  "bugs": {
+    "url": "https://github.com/HeartC-O-R-E/3D-Audio-Subsystem/issues"
+  },
   "scripts": {
     "build": "npm run clearbuild && npm run typecheck && node build/build-bundle.js && npm run build:web && npm run deploy",
     "build:scripts": "npm run clearbuild && npm run typecheck && node build/build-bundle.js",

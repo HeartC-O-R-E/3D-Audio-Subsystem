@@ -1,14 +1,14 @@
 /**
- * hcrp-audio — Client
+ * 3d-audio — Client
  *
  * Bridges sound play requests to the NUI Howler.js layer.
  * Positive sound IDs = server-initiated, negative IDs = client-local.
  *
  * DIMENSION HANDLING
  *   FiveM exposes no client-side native to read the player's routing bucket.
- *   HeartCORE.Client must call exports['hcrp-audio']['setDimension'](dim)
- *   whenever PlayerModule.LocalDimension changes — this is the only dependency
- *   hcrp-audio has on the gamemode.  On dimension change:
+ *   Your framework must call exports['3d-audio']['setDimension'](dim) whenever
+ *   the local player's routing bucket changes — this is the only thing 3d-audio
+ *   needs from the surrounding gamemode.  On dimension change:
  *     1. Stops all sounds bound to the old bucket.
  *     2. Notifies the server so it can re-send sounds for the new bucket.
  *   Sounds with dimension = -1 are never stopped by dimension changes.
@@ -16,7 +16,7 @@
  * CLIENT EXPORTS
  *
  *   setDimension(dim: number): void
- *     Must be called by HeartCORE.Client when the routing bucket changes.
+ *     Must be called whenever the routing bucket changes.
  *   play3d(soundId, soundFile, x, y, z, range, volume, loop,
  *          dimension?, entityNetId?): void
  *     Caller allocates soundId (must be negative for client-local sounds).
@@ -56,18 +56,17 @@ function deactivateSound(soundId: number): void {
 }
 
 // ─── Internal dimension-change handler ────────────────────────────────────────
-// Shared by the self-contained GetInstanceId() poll and the setDimension export.
 
 function onDimensionChange(newDim: number): void {
     if (newDim === currentDimension) return;
 
-    console.log(`[hcrp-audio] dimension ${currentDimension} → ${newDim}, stopping ${soundDimensions.size} tracked sound(s)`);
+    console.log(`[3d-audio] dimension ${currentDimension} → ${newDim}, stopping ${soundDimensions.size} tracked sound(s)`);
 
     soundDimensions.forEach((soundDim, soundId) => {
         if (soundDim !== -1) {
             if (activeSounds.has(soundId)) {
                 deactivateSound(soundId);
-                SendNuiMessage(JSON.stringify({ type: 'hcrp-audio:stop', soundId }));
+                SendNuiMessage(JSON.stringify({ type: '3d-audio:stop', soundId }));
             }
             stopEntityTracking(soundId);
             soundDimensions.delete(soundId);
@@ -75,7 +74,7 @@ function onDimensionChange(newDim: number): void {
     });
 
     currentDimension = newDim;
-    emitNet('hcrp-audio:bucket-changed', newDim);
+    emitNet('3d-audio:bucket-changed', newDim);
 }
 
 // ─── Listener tick (20 Hz) ────────────────────────────────────────────────────
@@ -95,7 +94,7 @@ function ensureListenerTick(): void {
         const [rx, ry, rz] = GetEntityRotation(ped, 2);
 
         SendNuiMessage(JSON.stringify({
-            type: 'hcrp-audio:listener',
+            type: '3d-audio:listener',
             px, py, pz, rx, ry, rz,
         }));
 
@@ -115,7 +114,7 @@ function startEntityTracking(
 ): void {
     if (entityTracks.has(soundId)) return;
 
-    console.log(`[hcrp-audio] entity-track start #${soundId} entity=${entityNetId} file="${soundFile}"`);
+    console.log(`[3d-audio] entity-track start #${soundId} entity=${entityNetId} file="${soundFile}"`);
 
     let soundActive = false;
 
@@ -126,8 +125,8 @@ function startEntityTracking(
             if (soundActive) {
                 soundActive = false;
                 deactivateSound(soundId);
-                SendNuiMessage(JSON.stringify({ type: 'hcrp-audio:stop', soundId }));
-                console.log(`[hcrp-audio] entity-track #${soundId}: entity left streaming range → paused`);
+                SendNuiMessage(JSON.stringify({ type: '3d-audio:stop', soundId }));
+                console.log(`[3d-audio] entity-track #${soundId}: entity left streaming range → paused`);
             }
             await new Promise<void>(resolve => setTimeout(resolve, 50)); // 20 Hz — no need to hammer at 60 FPS while entity is gone
             return;
@@ -139,12 +138,12 @@ function startEntityTracking(
             soundActive = true;
             activateSound(soundId);
             SendNuiMessage(JSON.stringify({
-                type: 'hcrp-audio:play',
+                type: '3d-audio:play',
                 soundId, soundFile, x, y, z, range, volume, loop,
             }));
-            console.log(`[hcrp-audio] entity-track #${soundId}: entity in range → playing @ (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})`);
+            console.log(`[3d-audio] entity-track #${soundId}: entity in range → playing @ (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})`);
         } else {
-            SendNuiMessage(JSON.stringify({ type: 'hcrp-audio:update-pos', soundId, x, y, z }));
+            SendNuiMessage(JSON.stringify({ type: '3d-audio:update-pos', soundId, x, y, z }));
         }
 
         await new Promise<void>(resolve => setTimeout(resolve, 50)); // 20 Hz — 60 FPS is excessive for position updates
@@ -159,7 +158,7 @@ function stopEntityTracking(soundId: number): void {
     if (tick !== undefined) {
         clearTick(tick);
         entityTracks.delete(soundId);
-        console.log(`[hcrp-audio] entity-track stopped #${soundId}`);
+        console.log(`[3d-audio] entity-track stopped #${soundId}`);
     }
 }
 
@@ -173,7 +172,7 @@ function playSound(
 ): void {
     activateSound(soundId);
     SendNuiMessage(JSON.stringify({
-        type: 'hcrp-audio:play',
+        type: '3d-audio:play',
         soundId, soundFile, x, y, z, range, volume, loop,
     }));
 }
@@ -182,12 +181,12 @@ function stopSound(soundId: number): void {
     deactivateSound(soundId);
     stopEntityTracking(soundId);
     soundDimensions.delete(soundId);
-    SendNuiMessage(JSON.stringify({ type: 'hcrp-audio:stop', soundId }));
+    SendNuiMessage(JSON.stringify({ type: '3d-audio:stop', soundId }));
 }
 
 // ─── Server-initiated sounds ──────────────────────────────────────────────────
 
-onNet('hcrp-audio:play', (
+onNet('3d-audio:play', (
     soundId: number,
     soundFile: string,
     x: number, y: number, z: number,
@@ -196,11 +195,11 @@ onNet('hcrp-audio:play', (
     entityNetId: number,
 ) => {
     if (dimension !== -1 && currentDimension !== dimension) {
-        console.log(`[hcrp-audio] server play #${soundId} "${soundFile}" → skipped (dim mismatch: current=${currentDimension}, sound=${dimension})`);
+        console.log(`[3d-audio] server play #${soundId} "${soundFile}" → skipped (dim mismatch: current=${currentDimension}, sound=${dimension})`);
         return;
     }
     soundDimensions.set(soundId, dimension);
-    console.log(`[hcrp-audio] server play #${soundId} "${soundFile}" dim=${dimension} entity=${entityNetId}`);
+    console.log(`[3d-audio] server play #${soundId} "${soundFile}" dim=${dimension} entity=${entityNetId}`);
 
     if (entityNetId > 0) {
         startEntityTracking(soundId, entityNetId, soundFile, range, volume, loop);
@@ -209,47 +208,47 @@ onNet('hcrp-audio:play', (
     }
 });
 
-onNet('hcrp-audio:stop', (soundId: number) => {
-    console.log(`[hcrp-audio] server stop #${soundId}`);
+onNet('3d-audio:stop', (soundId: number) => {
+    console.log(`[3d-audio] server stop #${soundId}`);
     stopSound(soundId);
 });
 
 // ─── NUI ended callback ───────────────────────────────────────────────────────
 
-RegisterNuiCallbackType('hcrp-audio:ended');
-on('__cfx_nui:hcrp-audio:ended', (data: { soundId?: number } | null, cb: () => void) => {
+RegisterNuiCallbackType('3d-audio:ended');
+on('__cfx_nui:3d-audio:ended', (data: { soundId?: number } | null, cb: () => void) => {
     cb();
     if (!data || data.soundId === undefined) return;
-    console.log(`[hcrp-audio] NUI ended #${data.soundId}`);
+    console.log(`[3d-audio] NUI ended #${data.soundId}`);
     deactivateSound(data.soundId);
     stopEntityTracking(data.soundId);
     soundDimensions.delete(data.soundId);
 
     if (data.soundId < 0) {
-        // Client-local sound ended — notify local event consumers (e.g. SoundModule)
-        emit('hcrp-audio:ended', data.soundId);
+        // Client-local sound ended — notify local event consumers
+        emit('3d-audio:ended', data.soundId);
     } else {
         // Server-initiated sound ended — notify server to remove from soundRegistry.
         // Without this the server leaks one-shot sound entries and may try to
         // re-send completed sounds to players who change routing buckets.
-        emitNet('hcrp-audio:client-ended', data.soundId);
+        emitNet('3d-audio:client-ended', data.soundId);
     }
 });
 
 // ─── Client exports ───────────────────────────────────────────────────────────
 
 /**
- * Called by HeartCORE.Client whenever PlayerModule.LocalDimension changes.
- * This is the only external dependency hcrp-audio has on the gamemode —
- * there is no client-side FiveM native to read the routing bucket directly.
+ * Call this whenever the local player's routing bucket changes.
+ * This is the only thing 3d-audio needs from the surrounding gamemode — there is
+ * no client-side FiveM native to read the routing bucket directly.
  */
 exp('setDimension', (dim: number): void => {
     onDimensionChange(dim);
 });
 
 /**
- * Play a client-local 3D sound. The caller allocates soundId (must be negative).
- * Called by SoundModule in HeartCORE.Client.
+ * Play a client-local 3D sound. The caller allocates soundId (must be negative;
+ * positive IDs belong to the server's namespace).
  */
 exp('play3d', (
     soundId: number,
@@ -260,11 +259,11 @@ exp('play3d', (
     entityNetId: number = 0,
 ): void => {
     if (dimension !== -1 && currentDimension !== dimension) {
-        console.log(`[hcrp-audio] play3d #${soundId} "${soundFile}" → skipped (dim mismatch: current=${currentDimension}, sound=${dimension})`);
+        console.log(`[3d-audio] play3d #${soundId} "${soundFile}" → skipped (dim mismatch: current=${currentDimension}, sound=${dimension})`);
         return;
     }
     soundDimensions.set(soundId, dimension);
-    console.log(`[hcrp-audio] play3d #${soundId} "${soundFile}" dim=${dimension} entity=${entityNetId}`);
+    console.log(`[3d-audio] play3d #${soundId} "${soundFile}" dim=${dimension} entity=${entityNetId}`);
 
     if (entityNetId > 0) {
         startEntityTracking(soundId, entityNetId, soundFile, range, volume, loop);
@@ -273,10 +272,10 @@ exp('play3d', (
     }
 });
 
-/** Stop a client-local sound. Called by SoundModule in HeartCORE.Client. */
+/** Stop a client-local sound. */
 exp('stop', (soundId: number): void => {
-    console.log(`[hcrp-audio] stop #${soundId}`);
+    console.log(`[3d-audio] stop #${soundId}`);
     stopSound(soundId);
 });
 
-console.log('[hcrp-audio] Client loaded');
+console.log('[3d-audio] Client loaded');

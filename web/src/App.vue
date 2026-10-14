@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * hcrp-audio — Browser Audio Layer
+ * 3d-audio — Browser Audio Layer
  *
  * Invisible component managing all 3D positional audio via Howler.js.
  * Positive sound IDs are server-initiated, negative IDs are client-local —
@@ -13,7 +13,7 @@ import { Howl, Howler } from 'howler'
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface PlayMsg {
-  type: 'hcrp-audio:play'
+  type: '3d-audio:play'
   soundId: number
   soundFile: string
   x: number; y: number; z: number
@@ -23,18 +23,18 @@ interface PlayMsg {
 }
 
 interface StopMsg {
-  type: 'hcrp-audio:stop'
+  type: '3d-audio:stop'
   soundId: number
 }
 
 interface UpdatePosMsg {
-  type: 'hcrp-audio:update-pos'
+  type: '3d-audio:update-pos'
   soundId: number
   x: number; y: number; z: number
 }
 
 interface ListenerMsg {
-  type: 'hcrp-audio:listener'
+  type: '3d-audio:listener'
   px: number; py: number; pz: number
   rx: number; ry: number; rz: number
 }
@@ -45,8 +45,25 @@ type Msg = PlayMsg | StopMsg | UpdatePosMsg | ListenerMsg
 
 const sounds = new Map<number, Howl>()
 
-const log = (...args: unknown[]) => console.log('[hcrp-audio]', ...args)
-const warn = (...args: unknown[]) => console.warn('[hcrp-audio]', ...args)
+/**
+ * The resource name as seen by the NUI. GetParentResourceName() is a global
+ * injected into every FiveM NUI frame; the literal fallback keeps `vite dev`
+ * from throwing.
+ *
+ * Resolved at runtime rather than hardcoded so that renaming the resource
+ * folder does not silently break the NUI callbacks.
+ */
+function resourceName(): string {
+  const g = globalThis as unknown as { GetParentResourceName?: () => string }
+  try {
+    return typeof g.GetParentResourceName === 'function' ? g.GetParentResourceName() : '3d-audio'
+  } catch {
+    return '3d-audio'
+  }
+}
+
+const log = (...args: unknown[]) => console.log('[3d-audio]', ...args)
+const warn = (...args: unknown[]) => console.warn('[3d-audio]', ...args)
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -87,7 +104,7 @@ function onPlay(msg: PlayMsg): void {
       // is still active. Only clean up on end for non-looping sounds.
       if (msg.loop) return
       sounds.delete(msg.soundId)
-      fetch('https://hcrp-audio/hcrp-audio:ended', {
+      fetch(`https://${resourceName()}/3d-audio:ended`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ soundId: msg.soundId }),
@@ -145,10 +162,10 @@ function onMessage(event: MessageEvent): void {
   const data = event.data as Msg
   if (!data?.type) return
 
-  if      (data.type === 'hcrp-audio:play'       ) onPlay(data)
-  else if (data.type === 'hcrp-audio:stop'       ) onStop(data)
-  else if (data.type === 'hcrp-audio:update-pos' ) onUpdatePos(data)
-  else if (data.type === 'hcrp-audio:listener'   ) onListener(data)
+  if      (data.type === '3d-audio:play'       ) onPlay(data)
+  else if (data.type === '3d-audio:stop'       ) onStop(data)
+  else if (data.type === '3d-audio:update-pos' ) onUpdatePos(data)
+  else if (data.type === '3d-audio:listener'   ) onListener(data)
 }
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────

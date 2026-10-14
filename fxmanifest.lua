@@ -1,10 +1,11 @@
 fx_version 'cerulean'
 game 'gta5'
 
-name 'hcrp-audio'
-description '3D Positional Audio — shared audio API for HeartCORE outsourced systems'
-author 'HeartCORE Team'
+name '3d-audio'
+description '3D positional audio for FiveM — arbitrary audio files spatialized through Web Audio / Howler.js'
+author 'Northdegree, Julscha'
 version '1.0.0'
+repository 'https://github.com/HeartC-O-R-E/3D-Audio-Subsystem'
 
 server_script 'dist/server/index.js'
 client_script 'dist/client/index.js'
@@ -14,5 +15,3 @@ files {
     'dist/web/**/*',
     'assets/sounds/**/*',
 }
-
--- No dependency on heartCORE — intentionally standalone

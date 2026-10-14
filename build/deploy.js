@@ -4,7 +4,7 @@ const path = require('path');
 const BASE_DIR   = process.env.DEPLOY_ROOT
     ? path.resolve(process.env.DEPLOY_ROOT)
     : path.resolve(__dirname, '../../../.server');
-const TARGET_DIR = path.join(BASE_DIR, 'server-data', 'resources', '[gamemodes]', 'hcrp-audio');
+const TARGET_DIR = path.join(BASE_DIR, 'server-data', 'resources', '[gamemodes]', '3d-audio');
 
 const ITEMS_TO_COPY = [
     { src: 'dist',           isDir: true  },
@@ -22,7 +22,7 @@ function copyDir(src, dest) {
 }
 
 function deploy() {
-    console.log('[Deploy] hcrp-audio →', TARGET_DIR);
+    console.log('[Deploy] 3d-audio →', TARGET_DIR);
     if (fs.existsSync(TARGET_DIR)) fs.rmSync(TARGET_DIR, { recursive: true });
     fs.mkdirSync(TARGET_DIR, { recursive: true });
 
