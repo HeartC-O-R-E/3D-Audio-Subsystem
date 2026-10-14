@@ -1,0 +1,111 @@
+site_name: 3D Audio Subsystem
+site_description: >-
+  3D positional audio for FiveM — play arbitrary audio files at world
+  coordinates with true HRTF spatialization via Web Audio and Howler.js.
+site_author: Northdegree, Julscha
+site_url: https://heartc-o-r-e.github.io/3D-Audio-Subsystem/
+
+repo_url: https://github.com/HeartC-O-R-E/3D-Audio-Subsystem
+repo_name: HeartC-O-R-E/3D-Audio-Subsystem
+edit_uri: edit/main/docs/
+
+copyright: Copyright &copy; 2026 Northdegree, Julscha — Apache-2.0
+
+theme:
+  name: material
+  language: en
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: pink
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: pink
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Configuration: configuration.md
+  - API Reference:
+      - Overview: api/index.md
+      - Server Exports: api/server.md
+      - Client Exports: api/client.md
+      - Events & NUI Messages: api/events.md
+  - Sound Files: sounds.md
+  - Architecture: architecture.md
+  - Building from Source: building.md
+  - Troubleshooting: troubleshooting.md
+  - Known Limitations: limitations.md
+  - Changelog: changelog.md
+
+plugins:
+  - search
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      permalink_title: Link to this section
+  - pymdownx.details
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      check_paths: true
+      base_path:
+        - .
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/HeartC-O-R-E/3D-Audio-Subsystem
+      name: Source on GitHub
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
